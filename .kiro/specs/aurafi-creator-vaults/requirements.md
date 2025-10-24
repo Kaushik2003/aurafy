@@ -18,7 +18,7 @@ AuraFi is a creator-backed collateral protocol where creators and fans jointly u
 - **MIN_CR**: Minimum collateralization ratio of 150% required for minting
 - **LIQ_CR**: Liquidation threshold of 120% below which liquidation is triggered
 - **ForcedContraction**: Protocol mechanism that burns tokens proportionally when supply exceeds SupplyCap after aura drop
-- **Oracle**: Trusted address that updates aura values with IPFS evidence
+- **Oracle**: A smart contract (AuraOracle) that stores aura values with IPFS evidence, providing a single source of truth for all vaults to read from
 - **VaultFactory**: Contract that deploys new vaults and tokens for creators
 - **Treasury**: Contract that collects protocol fees
 
@@ -56,7 +56,7 @@ AuraFi is a creator-backed collateral protocol where creators and fans jointly u
 
 1. WHEN a fan calls mintTokens with quantity q and sufficient CELO, THE CreatorVault SHALL calculate requiredCollateral as q * peg * MIN_CR plus MINT_FEE
 2. WHEN minting is requested, THE CreatorVault SHALL verify that stage is greater than 0 and totalSupply plus q does not exceed stageMintCap for current stage
-3. WHEN minting is requested, THE CreatorVault SHALL verify that totalSupply plus q does not exceed SupplyCap based on lastAura
+3. WHEN minting is requested, THE CreatorVault SHALL fetch current aura from AuraOracle and verify that totalSupply plus q does not exceed SupplyCap based on current aura
 4. WHEN collateral requirements are met, THE CreatorVault SHALL create a Position record with owner, qty, collateral (minus fee), stage, and createdAt timestamp
 5. WHEN a position is created, THE CreatorVault SHALL mint q tokens to the fan via CreatorToken, update fanCollateral and totalCollateral, and emit Minted event
 6. WHEN minting would cause Health to fall below MIN_CR, THE CreatorVault SHALL revert the transaction
@@ -75,18 +75,18 @@ AuraFi is a creator-backed collateral protocol where creators and fans jointly u
 5. WHEN HealthAfter would be less than MIN_CR, THE CreatorVault SHALL revert the transaction
 6. WHEN redemption completes, THE CreatorVault SHALL update position quantities, fanCollateral, totalCollateral, totalSupply, and emit Redeemed event
 
-### Requirement 5: Oracle Aura Updates with Evidence
+### Requirement 5: Oracle Aura Storage and Retrieval
 
-**User Story:** As an oracle operator, I want to update a creator's aura with IPFS evidence so that the protocol can adjust peg and supply caps based on creator activity
+**User Story:** As an oracle operator, I want to store aura updates in the AuraOracle contract so that all vaults can read the latest aura values on-chain
 
 #### Acceptance Criteria
 
-1. WHEN updateAura is called with aura and ipfsHash, THE CreatorVault SHALL verify the caller is the registered oracle address
-2. WHEN an aura update is requested, THE CreatorVault SHALL verify that ORACLE_UPDATE_COOLDOWN has elapsed since the last update
-3. WHEN aura is updated, THE CreatorVault SHALL calculate newPeg using the formula P(aura) = BASE_PRICE * (1 + K * (aura/A_REF - 1)) clamped between P_MIN and P_MAX
-4. WHEN aura is updated, THE CreatorVault SHALL calculate newSupplyCap using SupplyCap(aura) = BaseCap * (1 + s * (aura - A_REF) / A_REF) clamped appropriately
-5. WHEN totalSupply exceeds newSupplyCap, THE CreatorVault SHALL set pendingForcedBurn to (totalSupply minus newSupplyCap), set forcedBurnDeadline to (block.timestamp plus FORCED_BURN_GRACE), and emit SupplyCapShrink event
-6. WHEN aura update completes without supply cap violation, THE CreatorVault SHALL update lastAura, peg, and emit AuraUpdated event with ipfsHash
+1. WHEN pushAura is called on AuraOracle with vault address, aura, and ipfsHash, THE AuraOracle SHALL verify the caller is the registered oracle address
+2. WHEN an aura update is requested, THE AuraOracle SHALL verify that ORACLE_UPDATE_COOLDOWN has elapsed since the last update for that vault
+3. WHEN aura is stored, THE AuraOracle SHALL update vaultAura mapping, vaultIpfsHash mapping, and lastUpdateTimestamp mapping
+4. WHEN aura storage completes, THE AuraOracle SHALL emit AuraUpdated event with vault address, aura value, ipfsHash, and timestamp
+5. WHEN getAura is called on AuraOracle with a vault address, THE AuraOracle SHALL return the current aura value for that vault
+6. WHEN CreatorVault needs aura for calculations, THE CreatorVault SHALL call AuraOracle.getAura(address(this)) to fetch the current value
 
 ### Requirement 6: Forced Contraction After Grace Period
 
@@ -94,14 +94,15 @@ AuraFi is a creator-backed collateral protocol where creators and fans jointly u
 
 #### Acceptance Criteria
 
-1. WHEN executeForcedBurn is called after forcedBurnDeadline, THE CreatorVault SHALL calculate requiredBurn from pendingForcedBurn
-2. WHEN processing forced burn, THE CreatorVault SHALL iterate through positionOwners up to maxOwnersToProcess limit for gas safety
-3. WHEN burning from a position, THE CreatorVault SHALL calculate burnFromPosition as floor(position.qty * requiredBurn / totalSupply)
-4. WHEN burning from a position, THE CreatorVault SHALL calculate collateralWriteDown as position.collateral * (burnFromPosition / position.qty)
-5. WHEN forced burn is executed, THE CreatorVault SHALL reduce position.qty, position.collateral, totalSupply, and totalCollateral by calculated amounts
-6. WHEN forced burn is executed, THE CreatorVault SHALL call CreatorToken.burn for each affected position
-7. WHEN forced burn processing completes, THE CreatorVault SHALL reduce pendingForcedBurn and emit ForcedBurnExecuted event with totalBurned and totalWriteDown
-8. WHEN executeForcedBurn is called before forcedBurnDeadline, THE CreatorVault SHALL revert the transaction
+1. WHEN checkAndTriggerForcedBurn is called, THE CreatorVault SHALL fetch current aura from AuraOracle, calculate current supply cap, and if totalSupply exceeds supply cap, set pendingForcedBurn and forcedBurnDeadline
+2. WHEN executeForcedBurn is called after forcedBurnDeadline, THE CreatorVault SHALL calculate requiredBurn from pendingForcedBurn
+3. WHEN processing forced burn, THE CreatorVault SHALL iterate through positionOwners up to maxOwnersToProcess limit for gas safety
+4. WHEN burning from a position, THE CreatorVault SHALL calculate burnFromPosition as floor(position.qty * requiredBurn / totalSupply)
+5. WHEN burning from a position, THE CreatorVault SHALL calculate collateralWriteDown as position.collateral * (burnFromPosition / position.qty)
+6. WHEN forced burn is executed, THE CreatorVault SHALL reduce position.qty, position.collateral, totalSupply, and totalCollateral by calculated amounts
+7. WHEN forced burn is executed, THE CreatorVault SHALL call CreatorToken.burn for each affected position
+8. WHEN forced burn processing completes, THE CreatorVault SHALL reduce pendingForcedBurn and emit ForcedBurnExecuted event with totalBurned and totalWriteDown
+9. WHEN executeForcedBurn is called before forcedBurnDeadline, THE CreatorVault SHALL revert the transaction
 
 ### Requirement 7: Liquidation Mechanism for Undercollateralized Vaults
 
@@ -127,7 +128,9 @@ AuraFi is a creator-backed collateral protocol where creators and fans jointly u
 1. WHEN getVaultState is called, THE CreatorVault SHALL return creatorCollateral, fanCollateral, totalCollateral, totalSupply, peg, stage, and health
 2. WHEN getPosition is called with owner and index, THE CreatorVault SHALL return the Position struct containing owner, qty, collateral, stage, and createdAt
 3. WHEN health is calculated, THE CreatorVault SHALL use the formula Health = totalCollateral / (totalSupply * peg)
-4. WHEN getAura is called on AuraOracle, THE AuraOracle SHALL return the last recorded aura for the specified vault
+4. WHEN getCurrentAura is called on CreatorVault, THE CreatorVault SHALL fetch and return the current aura value from AuraOracle
+5. WHEN getPeg is called on CreatorVault, THE CreatorVault SHALL fetch current aura from AuraOracle and calculate peg dynamically
+6. WHEN getAura is called on AuraOracle, THE AuraOracle SHALL return the last recorded aura for the specified vault
 
 ### Requirement 9: Security and Access Control
 

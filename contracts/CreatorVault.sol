@@ -6,6 +6,26 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
+ * @title IAuraOracle
+ * @notice Interface for reading aura values from AuraOracle contract
+ */
+interface IAuraOracle {
+    function getAura(address vault) external view returns (uint256);
+    function getLastUpdateTimestamp(address vault) external view returns (uint256);
+}
+
+/**
+ * @title ICreatorToken
+ * @notice Interface for CreatorToken ERC20 contract operations
+ * @dev Defines mint, burn, and transferFrom functions that vault uses to manage token supply
+ */
+interface ICreatorToken {
+    function mint(address to, uint256 amount) external;
+    function burn(address from, uint256 amount) external;
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+/**
  * @title CreatorVault
  * @notice Core vault contract managing dual collateral (creator + fan) and token lifecycle
  * @dev Implements aura-anchored peg, staged progression, forced contraction, and liquidation
@@ -84,12 +104,6 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
     /// @notice Total supply of tokens minted
     uint256 public totalSupply;
 
-    /// @notice Last recorded aura value from oracle
-    uint256 public lastAura;
-
-    /// @notice Current peg value (CELO per token, in WAD)
-    uint256 public peg;
-
     /// @notice Current stage (0 = not bootstrapped, 1+ = unlocked stages)
     uint8 public stage;
 
@@ -101,9 +115,6 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
 
     /// @notice Deadline timestamp for forced burn execution
     uint256 public forcedBurnDeadline;
-
-    /// @notice Timestamp of last aura update
-    uint256 public lastAuraUpdate;
 
     // ============ Mappings ============
 
@@ -126,9 +137,6 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
         address indexed vault, address indexed minter, uint256 qty, uint256 collateral, uint8 stage, uint256 peg
     );
     event Redeemed(address indexed vault, address indexed redeemer, uint256 qty, uint256 collateralReturned);
-    event AuraUpdated(
-        address indexed vault, uint256 oldAura, uint256 newAura, uint256 oldPeg, uint256 newPeg, string ipfsHash
-    );
     event SupplyCapShrink(
         address indexed vault, uint256 oldCap, uint256 newCap, uint256 pendingBurn, uint256 graceEndTs
     );
@@ -147,7 +155,6 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
     error NotLiquidatable();
     error GracePeriodActive();
     error Unauthorized();
-    error CooldownNotElapsed();
     error InsufficientPayment();
     error InsufficientLiquidation();
 
@@ -179,8 +186,6 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
         // Initialize with default values
         stage = 0;
         totalSupply = 0;
-        peg = BASE_PRICE; // Start with base price
-        lastAura = A_REF; // Start with reference aura
     }
 
     // ============ Mathematical Helper Functions ============
@@ -279,6 +284,25 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
+     * @notice Get current aura from oracle contract
+     * @dev Reads aura dynamically from AuraOracle - single source of truth
+     * @return Current aura value for this vault
+     */
+    function getCurrentAura() public view returns (uint256) {
+        return IAuraOracle(oracle).getAura(address(this));
+    }
+
+    /**
+     * @notice Get current peg based on current aura from oracle
+     * @dev Calculates peg dynamically using latest oracle aura value
+     * @return Current peg value in WAD
+     */
+    function getPeg() public view returns (uint256) {
+        uint256 aura = getCurrentAura();
+        return calculatePeg(aura);
+    }
+
+    /**
      * @notice Calculate current health (collateralization ratio) of the vault
      * @dev Formula: Health = totalCollateral / (totalSupply * peg)
      *      Returns WAD-scaled ratio (1.5e18 = 150%)
@@ -290,10 +314,13 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             return type(uint256).max;
         }
 
+        // Get current peg dynamically from oracle
+        uint256 currentPeg = getPeg();
+
         // Calculate denominator: totalSupply * peg
         // totalSupply is in token units, peg is in WAD (CELO per token)
         // Result is in CELO (WAD units)
-        uint256 denominator = wadMul(totalSupply, peg);
+        uint256 denominator = wadMul(totalSupply, currentPeg);
 
         // Calculate health: totalCollateral / denominator
         // Both are in CELO (WAD units), result is a ratio in WAD
@@ -307,9 +334,12 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
      * @return Required collateral in CELO (WAD units)
      */
     function calculateRequiredCollateral(uint256 qty) internal view returns (uint256) {
+        // Get current peg dynamically from oracle
+        uint256 currentPeg = getPeg();
+
         // qty is in token units, peg is in WAD (CELO per token)
         // qty * peg gives CELO amount in WAD
-        uint256 celoAmount = wadMul(qty, peg);
+        uint256 celoAmount = wadMul(qty, currentPeg);
 
         // Multiply by MIN_CR (which is in WAD, e.g., 1.5e18 = 150%)
         return wadMul(celoAmount, MIN_CR);
@@ -448,8 +478,9 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             revert ExceedsStageCap();
         }
 
-        // Calculate current supply cap based on lastAura
-        uint256 currentSupplyCap = calculateSupplyCap(lastAura);
+        // Calculate current supply cap based on current aura from oracle
+        uint256 aura = getCurrentAura();
+        uint256 currentSupplyCap = calculateSupplyCap(aura);
 
         // Verify totalSupply + qty does not exceed supply cap
         if (totalSupply + qty > currentSupplyCap) {
@@ -493,8 +524,9 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             revert HealthTooLow();
         }
 
-        // Emit Minted event
-        emit Minted(address(this), msg.sender, qty, actualCollateral, stage, peg);
+        // Emit Minted event with current peg
+        uint256 currentPeg = getPeg();
+        emit Minted(address(this), msg.sender, qty, actualCollateral, stage, currentPeg);
     }
 
     /**
@@ -555,6 +587,9 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
         uint256 newTotalCollateral = totalCollateral - collateralToReturn;
         uint256 newTotalSupply = totalSupply - qty;
 
+        // Get current peg dynamically from oracle
+        uint256 currentPeg = getPeg();
+
         // Calculate health after redemption
         uint256 healthAfter;
         if (newTotalSupply == 0) {
@@ -562,7 +597,7 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             healthAfter = type(uint256).max;
         } else {
             // Calculate denominator: newTotalSupply * peg
-            uint256 denominator = wadMul(newTotalSupply, peg);
+            uint256 denominator = wadMul(newTotalSupply, currentPeg);
             // Calculate health: newTotalCollateral / denominator
             healthAfter = wadDiv(newTotalCollateral, denominator);
         }
@@ -588,62 +623,29 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
         emit Redeemed(address(this), msg.sender, qty, collateralToReturn);
     }
 
-    // ============ Oracle Functions ============
+    // ============ Forced Contraction Functions ============
 
     /**
-     * @notice Modifier to restrict function access to oracle address only
+     * @notice Check if supply exceeds cap and trigger forced burn if needed
+     * @dev Anyone can call this to enforce supply cap after aura drops in oracle
+     *      Monitors current oracle aura and triggers forced burn with grace period
+     *      Requirements: 6.1, 8.5
      */
-    modifier onlyOracle() {
-        if (msg.sender != oracle) {
-            revert Unauthorized();
-        }
-        _;
-    }
+    function checkAndTriggerForcedBurn() external {
+        // Get current aura from oracle
+        uint256 aura = getCurrentAura();
+        uint256 currentSupplyCap = calculateSupplyCap(aura);
 
-    /**
-     * @notice Update vault's aura value with IPFS evidence, potentially triggering forced contraction
-     * @dev Oracle calls this function to update aura based on Farcaster metrics.
-     *      If new supply cap is below current supply, forced burn is triggered with grace period.
-     *      Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 9.2
-     * @param aura New aura value (0-200)
-     * @param ipfsHash IPFS hash containing evidence and metrics for this aura update
-     */
-    function updateAura(uint256 aura, string calldata ipfsHash) external onlyOracle {
-        // Verify cooldown has elapsed since last update
-        if (block.timestamp < lastAuraUpdate + ORACLE_UPDATE_COOLDOWN) {
-            revert CooldownNotElapsed();
-        }
-
-        // Store old values for event emission
-        uint256 oldAura = lastAura;
-        uint256 oldPeg = peg;
-
-        // Calculate new peg based on new aura
-        uint256 newPeg = calculatePeg(aura);
-
-        // Calculate new supply cap based on new aura
-        uint256 newSupplyCap = calculateSupplyCap(aura);
-
-        // Check if totalSupply exceeds new supply cap
-        if (totalSupply > newSupplyCap) {
-            // Trigger forced contraction
-            uint256 oldCap = calculateSupplyCap(lastAura);
-            pendingForcedBurn = totalSupply - newSupplyCap;
+        // Check if supply exceeds cap and no pending burn already
+        if (totalSupply > currentSupplyCap && pendingForcedBurn == 0) {
+            uint256 oldCap = totalSupply; // Current supply is the "old cap" being exceeded
+            uint256 newCap = currentSupplyCap;
+            pendingForcedBurn = totalSupply - currentSupplyCap;
             forcedBurnDeadline = block.timestamp + FORCED_BURN_GRACE;
-
+            
             // Emit SupplyCapShrink event
-            emit SupplyCapShrink(address(this), oldCap, newSupplyCap, pendingForcedBurn, forcedBurnDeadline);
-        } else {
-            // Normal aura update - update state variables
-            lastAura = aura;
-            peg = newPeg;
-
-            // Emit AuraUpdated event
-            emit AuraUpdated(address(this), oldAura, aura, oldPeg, newPeg, ipfsHash);
+            emit SupplyCapShrink(address(this), oldCap, newCap, pendingForcedBurn, forcedBurnDeadline);
         }
-
-        // Update lastAuraUpdate timestamp regardless of outcome
-        lastAuraUpdate = block.timestamp;
     }
 
     // ============ Liquidation Functions ============
@@ -671,9 +673,12 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             revert InsufficientPayment();
         }
 
+        // Get current peg dynamically from oracle
+        uint256 currentPeg = getPeg();
+
         // Calculate tokensToRemove = totalSupply - ((totalCollateral + msg.value) / (peg * MIN_CR / WAD))
         // Rearranging: tokensToRemove = totalSupply - ((totalCollateral + msg.value) * WAD) / (peg * MIN_CR)
-        uint256 targetSupply = wadDiv((totalCollateral + msg.value), wadMul(peg, MIN_CR));
+        uint256 targetSupply = wadDiv((totalCollateral + msg.value), wadMul(currentPeg, MIN_CR));
 
         // Verify tokensToRemove > 0
         if (totalSupply <= targetSupply) {
@@ -776,7 +781,7 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
      * @return _fanCollateral CELO deposited by fans
      * @return _totalCollateral Total CELO collateral (creator + fan)
      * @return _totalSupply Total supply of tokens minted
-     * @return _peg Current peg value (CELO per token, in WAD)
+     * @return _peg Current peg value (CELO per token, in WAD) - fetched dynamically from oracle
      * @return _stage Current stage (0 = not bootstrapped, 1+ = unlocked stages)
      * @return health Current health ratio (collateralization ratio in WAD)
      */
@@ -793,7 +798,7 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
             uint256 health
         )
     {
-        return (creatorCollateral, fanCollateral, totalCollateral, totalSupply, peg, stage, calculateHealth());
+        return (creatorCollateral, fanCollateral, totalCollateral, totalSupply, getPeg(), stage, calculateHealth());
     }
 
     /**
@@ -823,13 +828,14 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Get the current supply cap based on last recorded aura
-     * @dev Calculates and returns the maximum allowed token supply for current aura value
+     * @notice Get the current supply cap based on current oracle aura
+     * @dev Calculates and returns the maximum allowed token supply using latest aura from oracle
      *      Requirements: 8.3
      * @return Current supply cap in token units
      */
     function getCurrentSupplyCap() external view returns (uint256) {
-        return calculateSupplyCap(lastAura);
+        uint256 aura = getCurrentAura();
+        return calculateSupplyCap(aura);
     }
 
     // ============ Forced Contraction Functions ============
@@ -917,13 +923,4 @@ contract CreatorVault is ReentrancyGuard, Pausable, Ownable {
         // Emit ForcedBurnExecuted event
         emit ForcedBurnExecuted(address(this), totalBurned, totalWriteDown);
     }
-}
-
-/**
- * @notice Interface for CreatorToken functions
- */
-interface ICreatorToken {
-    function mint(address to, uint256 amount) external;
-    function burn(address from, uint256 amount) external;
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }

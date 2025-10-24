@@ -41,9 +41,10 @@ AuraFi implements a dual-collateral protocol where creators and fans jointly bac
 - Manages dual collateral (creator + fan)
 - Enforces stage-gated minting
 - Tracks per-position accounting
+- Fetches current aura from AuraOracle for all calculations
 - Executes forced contraction
 - Handles liquidations
-- Calculates health and peg
+- Calculates health and peg dynamically based on oracle aura
 
 **CreatorToken**
 - Standard ERC20 with restricted mint/burn
@@ -51,10 +52,11 @@ AuraFi implements a dual-collateral protocol where creators and fans jointly bac
 - Represents fan ownership
 
 **AuraOracle**
-- Stores aura values per vault
-- Records IPFS evidence hashes
-- Enforces update cooldowns
+- Stores aura values per vault with IPFS evidence
+- Provides read access via getAura(vault) for vaults to fetch current aura
+- Enforces update cooldowns per vault
 - Access-controlled to oracle address(es)
+- Single source of truth for all aura data
 
 **Treasury**
 - Collects mint fees
@@ -87,8 +89,7 @@ struct Vault {
     uint256 fanCollateral;
     uint256 totalCollateral;
     uint256 totalSupply;
-    uint256 lastAura;
-    uint256 peg;              // WAD (1e18 = 1 CELO per token)
+    // Note: aura and peg are fetched dynamically from AuraOracle, not stored in vault
     uint8 stage;
     uint256 baseCap;
     uint256 pendingForcedBurn;
@@ -136,14 +137,14 @@ function unlockStage() external payable;
 function mintTokens(uint256 qty) external payable;
 function redeemTokens(uint256 qty) external;
 
-// Oracle/admin
-function updateAura(uint256 aura, string calldata ipfsHash) external onlyOracle;
-
 // Forced contraction & liquidation
+function checkAndTriggerForcedBurn() external;
 function executeForcedBurn(uint256 maxOwnersToProcess) external;
 function liquidate() external payable;
 
 // Views
+function getCurrentAura() external view returns (uint256);
+function getPeg() external view returns (uint256);
 function getVaultState() external view returns (
     uint256 creatorCollateral,
     uint256 fanCollateral,
@@ -346,35 +347,44 @@ sequenceDiagram
 
 **Design Rationale**: FIFO position iteration ensures fair attribution. Health check prevents redemptions that would endanger vault.
 
-### 5. Oracle Aura Update Flow
+### 5. Oracle Aura Update and Vault Reading Flow
 
 ```mermaid
 sequenceDiagram
     participant Oracle
+    participant AuraOracle
     participant Vault
+    participant Fan
     
-    Oracle->>Vault: updateAura(newAura, ipfsHash)
-    Vault->>Vault: verify msg.sender == oracleAddress
-    Vault->>Vault: verify block.timestamp >= lastUpdate + COOLDOWN
-    Vault->>Vault: oldPeg = peg
-    Vault->>Vault: peg = calculatePeg(newAura)
-    Vault->>Vault: newSupplyCap = calculateSupplyCap(newAura)
+    Oracle->>AuraOracle: pushAura(vaultAddr, newAura, ipfsHash)
+    AuraOracle->>AuraOracle: verify msg.sender == oracleAddress
+    AuraOracle->>AuraOracle: verify cooldown elapsed
+    AuraOracle->>AuraOracle: store aura, ipfsHash, timestamp
+    AuraOracle->>Oracle: emit AuraUpdated
     
-    alt totalSupply > newSupplyCap
-        Vault->>Vault: pendingForcedBurn = totalSupply - newSupplyCap
-        Vault->>Vault: forcedBurnDeadline = now + GRACE_PERIOD
-        Vault->>Oracle: emit SupplyCapShrink(...)
-    else
-        Vault->>Vault: lastAura = newAura
-        Vault->>Oracle: emit AuraUpdated(oldAura, newAura, oldPeg, peg, ipfsHash)
-    end
+    Note over Vault,Fan: Later, when fan mints...
+    
+    Fan->>Vault: mintTokens(qty) + CELO
+    Vault->>AuraOracle: getAura(address(this))
+    AuraOracle->>Vault: return currentAura
+    Vault->>Vault: peg = calculatePeg(currentAura)
+    Vault->>Vault: supplyCap = calculateSupplyCap(currentAura)
+    Vault->>Vault: validate and process mint
+    
+    Note over Vault: Anyone can check supply cap...
+    
+    Vault->>AuraOracle: getAura(address(this))
+    AuraOracle->>Vault: return currentAura
+    Vault->>Vault: if (supply > supplyCap) trigger forced burn
 ```
 
 **Key Design Decisions**:
-- Cooldown prevents spam/manipulation
-- IPFS hash provides audit trail
-- Grace period allows fans to redeem before forced burn
-- Peg updates immediately affect new mints/redeems
+- AuraOracle is single source of truth
+- Vaults fetch aura dynamically via view calls (cheap gas)
+- No stored aura or peg in vault state
+- Peg and supply cap calculated on-demand
+- Forced contraction triggered manually via checkAndTriggerForcedBurn()
+- Oracle service only updates AuraOracle, not individual vaults
 
 ### 6. Forced Contraction Flow
 
