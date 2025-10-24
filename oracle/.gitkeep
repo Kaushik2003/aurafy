@@ -1,0 +1,9 @@
+# Oracle Directory
+
+This directory will contain the oracle computation scripts for calculating creator Aura scores based on Farcaster metrics.
+
+The oracle script will:
+- Fetch Farcaster metrics (follower count, engagement, etc.)
+- Compute normalized Aura scores (0-200 range)
+- Pin evidence to IPFS
+- Update vault contracts with new Aura values

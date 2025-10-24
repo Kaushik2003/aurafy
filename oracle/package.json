@@ -1,0 +1,22 @@
+{
+  "name": "aurafi-oracle",
+  "version": "1.0.0",
+  "description": "AuraFi oracle for computing creator aura from Farcaster metrics",
+  "main": "oracle.js",
+  "scripts": {
+    "start": "node oracle.js",
+    "test": "node test-oracle.js"
+  },
+  "keywords": [
+    "aurafi",
+    "oracle",
+    "farcaster",
+    "aura"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.12.2",
+    "ethers": "^6.15.0"
+  }
+}
