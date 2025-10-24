@@ -332,7 +332,13 @@
   - Include mock mode for testing with hardcoded metrics
   - _Requirements: 5.1, 5.6_
 
-- [ ]* 20. Write comprehensive unit tests for Treasury
+- [ ] 20. Write comprehensive unit tests for Treasury
+
+
+
+
+
+
   - Test fee collection via collectFee()
   - Test owner withdrawal with correct amount
   - Test unauthorized withdrawal reverts

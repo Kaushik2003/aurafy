@@ -5,6 +5,9 @@
  * Computes creator aura from Farcaster metrics and updates vault contracts
  */
 
+// Load environment variables from .env.local
+require('dotenv').config({ path: require('path').join(__dirname, '.env.local') });
+
 const { ethers } = require('ethers');
 const axios = require('axios');
 const fs = require('fs');
