@@ -38,7 +38,7 @@ contract Treasury is Ownable {
             revert InsufficientBalance();
         }
 
-        (bool success, ) = to.call{value: amount}("");
+        (bool success,) = to.call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }

@@ -19,12 +19,7 @@ contract AuraOracle is Ownable {
     mapping(address => uint256) private lastUpdateTimestamp;
 
     // Events
-    event AuraUpdated(
-        address indexed vault,
-        uint256 aura,
-        string ipfsHash,
-        uint256 timestamp
-    );
+    event AuraUpdated(address indexed vault, uint256 aura, string ipfsHash, uint256 timestamp);
     event OracleAddressUpdated(address indexed oldOracle, address indexed newOracle);
 
     // Custom errors
@@ -57,11 +52,7 @@ contract AuraOracle is Ownable {
      * @param aura New aura score (0-200 range)
      * @param ipfsHash IPFS hash containing metrics evidence
      */
-    function pushAura(
-        address vault,
-        uint256 aura,
-        string calldata ipfsHash
-    ) external onlyOracle {
+    function pushAura(address vault, uint256 aura, string calldata ipfsHash) external onlyOracle {
         // Check cooldown (skip for first update)
         if (lastUpdateTimestamp[vault] != 0) {
             if (block.timestamp < lastUpdateTimestamp[vault] + ORACLE_UPDATE_COOLDOWN) {

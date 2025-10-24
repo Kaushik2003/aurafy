@@ -243,7 +243,7 @@ async function pinToIPFS(data) {
 }
 
 /**
- * Update vault aura on-chain
+ * Update vault aura on-chain via AuraOracle
  * @param {string} vaultAddress - Vault contract address
  * @param {number} aura - Computed aura score
  * @param {string} ipfsUrl - Complete IPFS gateway URL
@@ -251,9 +251,14 @@ async function pinToIPFS(data) {
 async function updateVaultAura(vaultAddress, aura, ipfsUrl) {
     const RPC_URL = process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org';
     const PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
+    const ORACLE_CONTRACT_ADDRESS = process.env.ORACLE_CONTRACT_ADDRESS;
 
     if (!PRIVATE_KEY) {
         throw new Error('ORACLE_PRIVATE_KEY environment variable not set');
+    }
+
+    if (!ORACLE_CONTRACT_ADDRESS) {
+        throw new Error('ORACLE_CONTRACT_ADDRESS environment variable not set');
     }
 
     // Connect to network
@@ -263,30 +268,44 @@ async function updateVaultAura(vaultAddress, aura, ipfsUrl) {
     console.log(`\n🔗 Connected to network: ${RPC_URL}`);
     console.log(`📝 Oracle address: ${wallet.address}`);
 
-    // Load CreatorVault ABI
-    const vaultAbiPath = path.join(__dirname, '../out/CreatorVault.sol/CreatorVault.json');
+    // Load AuraOracle ABI
+    const oracleAbiPath = path.join(__dirname, '../out/AuraOracle.sol/AuraOracle.json');
 
-    if (!fs.existsSync(vaultAbiPath)) {
-        throw new Error('CreatorVault ABI not found. Run `forge build` first.');
+    if (!fs.existsSync(oracleAbiPath)) {
+        throw new Error('AuraOracle ABI not found. Run `forge build` first.');
     }
 
-    const vaultArtifact = JSON.parse(fs.readFileSync(vaultAbiPath, 'utf8'));
-    const vaultContract = new ethers.Contract(vaultAddress, vaultArtifact.abi, wallet);
+    const oracleArtifact = JSON.parse(fs.readFileSync(oracleAbiPath, 'utf8'));
+    const oracleContract = new ethers.Contract(ORACLE_CONTRACT_ADDRESS, oracleArtifact.abi, wallet);
+
+    // Extract IPFS hash from full URL
+    // Handles formats like: https://gateway.com/ipfs/QmHash or ipfs://QmHash
+    let ipfsHash;
+    if (ipfsUrl.includes('/ipfs/')) {
+        ipfsHash = ipfsUrl.split('/ipfs/')[1];
+    } else if (ipfsUrl.startsWith('ipfs://')) {
+        ipfsHash = ipfsUrl.replace('ipfs://', '');
+    } else {
+        ipfsHash = ipfsUrl; // Assume it's already just the hash
+    }
+
+    console.log(`📦 Extracted IPFS hash: ${ipfsHash}`);
 
     // Check current aura
     try {
-        const currentAura = await vaultContract.lastAura();
+        const currentAura = await oracleContract.getAura(vaultAddress);
         console.log(`Current aura: ${currentAura}`);
         console.log(`New aura: ${aura}`);
     } catch (error) {
         console.warn('Could not fetch current aura:', error.message);
     }
 
-    // Send transaction
-    console.log(`\n📤 Sending updateAura transaction...`);
+    // Send transaction to AuraOracle.pushAura
+    console.log(`\n📤 Sending pushAura transaction to AuraOracle...`);
+    console.log(`🏦 Vault: ${vaultAddress}`);
     console.log(`📊 Aura: ${aura}`);
-    console.log(`🔗 IPFS URL: ${ipfsUrl}`);
-    const tx = await vaultContract.updateAura(aura, ipfsUrl);
+    console.log(`🔗 IPFS Hash: ${ipfsHash}`);
+    const tx = await oracleContract.pushAura(vaultAddress, aura, ipfsHash);
     console.log(`Transaction hash: ${tx.hash}`);
 
     console.log('⏳ Waiting for confirmation...');
@@ -398,11 +417,12 @@ Options:
   --help               Show this help message
 
 Environment Variables:
-  NEYNAR_API_KEY       Neynar API key for Farcaster data
-  PINATA_JWT           Pinata JWT token for IPFS
-  PINATA_GATEWAY       Pinata gateway URL (default: https://indigo-naval-wolverine-789.mypinata.cloud)
-  ORACLE_PRIVATE_KEY   Private key for oracle wallet
-  RPC_URL              RPC endpoint (default: Celo Alfajores)
+  NEYNAR_API_KEY           Neynar API key for Farcaster data
+  PINATA_JWT               Pinata JWT token for IPFS
+  PINATA_GATEWAY           Pinata gateway URL (default: https://indigo-naval-wolverine-789.mypinata.cloud)
+  ORACLE_PRIVATE_KEY       Private key for oracle wallet
+  ORACLE_CONTRACT_ADDRESS  Address of deployed AuraOracle contract
+  RPC_URL                  RPC endpoint (default: Celo Alfajores)
 
 Examples:
   # Mock mode (no API keys needed)

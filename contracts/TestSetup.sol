@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 /// @notice Temporary contract to verify OpenZeppelin dependencies are correctly installed
 contract TestSetup is ERC20, Ownable, ReentrancyGuard, Pausable {
     constructor() ERC20("Test", "TST") Ownable(msg.sender) {}
-    
+
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }

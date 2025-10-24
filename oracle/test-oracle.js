@@ -4,12 +4,75 @@
  * Test script for oracle functions
  */
 
+require('dotenv').config({ path: require('path').join(__dirname, '.env.local') });
+
+const { ethers } = require('ethers');
+const fs = require('fs');
+const path = require('path');
+
 const {
     fetchFarcasterMetrics,
     computeAura,
     clamp,
     normalizeLog
 } = require('./oracle.js');
+
+/**
+ * Fetch data from AuraOracle contract by vault address
+ * Tests reading data back from the contract using getAura and getIpfsHash
+ * @param {string} vaultAddress - Vault address to query (optional, defaults to test address)
+ * @returns {Object} Object containing aura score and IPFS hash
+ */
+async function fetchData(vaultAddress) {
+    const RPC_URL = process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org';
+    const ORACLE_CONTRACT_ADDRESS = process.env.ORACLE_CONTRACT_ADDRESS;
+
+    if (!ORACLE_CONTRACT_ADDRESS) {
+        throw new Error('ORACLE_CONTRACT_ADDRESS environment variable not set');
+    }
+
+    // Use provided vault address or default test address
+    const queryAddress = vaultAddress || '0x0000000000000000000000000000000000000001';
+
+    console.log(`\n🔍 Fetching data from AuraOracle...`);
+    console.log(`🔗 RPC: ${RPC_URL}`);
+    console.log(`📝 Oracle Contract: ${ORACLE_CONTRACT_ADDRESS}`);
+    console.log(`🏦 Vault Address: ${queryAddress}`);
+
+    // Connect to network (read-only, no wallet needed)
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+    // Load AuraOracle ABI
+    const oracleAbiPath = path.join(__dirname, '../out/AuraOracle.sol/AuraOracle.json');
+
+    if (!fs.existsSync(oracleAbiPath)) {
+        throw new Error('AuraOracle ABI not found. Run `forge build` first.');
+    }
+
+    const oracleArtifact = JSON.parse(fs.readFileSync(oracleAbiPath, 'utf8'));
+    const oracleContract = new ethers.Contract(ORACLE_CONTRACT_ADDRESS, oracleArtifact.abi, provider);
+
+    // Call getAura
+    const aura = await oracleContract.getAura(queryAddress);
+    console.log(`📊 Aura Score: ${aura.toString()}`);
+
+    // Call getIpfsHash
+    const ipfsHash = await oracleContract.getIpfsHash(queryAddress);
+    console.log(`🔗 IPFS Hash: ${ipfsHash || '(empty)'}`);
+
+    // Call getLastUpdateTimestamp
+    const lastUpdate = await oracleContract.getLastUpdateTimestamp(queryAddress);
+    const lastUpdateDate = lastUpdate > 0 ? new Date(Number(lastUpdate) * 1000).toISOString() : 'Never';
+    console.log(`⏰ Last Update: ${lastUpdateDate}`);
+
+    return {
+        vaultAddress: queryAddress,
+        aura: aura.toString(),
+        ipfsHash,
+        lastUpdate: lastUpdate.toString(),
+        lastUpdateDate
+    };
+}
 
 console.log('🧪 Testing AuraFi Oracle Functions\n');
 
@@ -89,6 +152,29 @@ fetchFarcasterMetrics('12345', true).then(metrics => {
     console.log('✅ Scenario tests passed\n');
 
     console.log('🎉 All tests passed!');
+
+    // Test 6: Fetch data from contract
+    // Check if vault address provided as command-line argument
+    const vaultAddress = process.argv[2];
+    
+    console.log('\nTest 6: Fetch data from AuraOracle contract');
+    if (vaultAddress) {
+        console.log(`📍 Using provided vault address: ${vaultAddress}`);
+    } else {
+        console.log('📍 No vault address provided, using default test address');
+    }
+    
+    return fetchData(vaultAddress).then(data => {
+        console.log('\n✅ Successfully fetched data from contract:');
+        console.log(JSON.stringify(data, null, 2));
+        console.log('\n🎉 All tests including contract read passed!');
+        
+        if (!vaultAddress) {
+            console.log('\n💡 To query a specific vault address:');
+            console.log('   node test-oracle.js <vault-address>');
+            console.log('   Example: node test-oracle.js 0x1234567890123456789012345678901234567890');
+        }
+    });
 }).catch(error => {
     console.error('❌ Test failed:', error);
     process.exit(1);

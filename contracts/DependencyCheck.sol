@@ -13,4 +13,5 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 contract DependencyCheck {
     // This contract exists only to verify imports compile correctly
     // It will be removed once actual protocol contracts are implemented
-}
+
+    }

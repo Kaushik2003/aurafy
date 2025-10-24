@@ -32,11 +32,7 @@ contract CreatorToken is ERC20 {
      * @param symbol Token symbol (e.g., "CRTR")
      * @param _vault Address of the CreatorVault contract that can mint/burn
      */
-    constructor(
-        string memory name,
-        string memory symbol,
-        address _vault
-    ) ERC20(name, symbol) {
+    constructor(string memory name, string memory symbol, address _vault) ERC20(name, symbol) {
         vault = _vault;
     }
 

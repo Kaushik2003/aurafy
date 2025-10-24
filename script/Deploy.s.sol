@@ -20,7 +20,7 @@ contract Deploy is Script {
 
     function run() public {
         address deployer = msg.sender;
-        
+
         console.log("=== AuraFi Deployment Script ===");
         console.log("Deployer address:", deployer);
         console.log("");
@@ -42,11 +42,7 @@ contract Deploy is Script {
 
         // 3. Deploy VaultFactory
         console.log("Deploying VaultFactory...");
-        factory = new VaultFactory(
-            deployer,
-            address(treasury),
-            address(oracle)
-        );
+        factory = new VaultFactory(deployer, address(treasury), address(oracle));
         console.log("VaultFactory deployed at:", address(factory));
         console.log("");
 
@@ -76,11 +72,11 @@ contract Deploy is Script {
      */
     function _saveDeploymentAddresses() internal {
         string memory json = "deploymentData";
-        
+
         vm.serializeAddress(json, "treasury", address(treasury));
         vm.serializeAddress(json, "oracle", address(oracle));
         string memory finalJson = vm.serializeAddress(json, "factory", address(factory));
-        
+
         vm.writeJson(finalJson, "./deployments.json");
         console.log("Deployment addresses saved to deployments.json");
     }
