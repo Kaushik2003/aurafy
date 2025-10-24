@@ -191,19 +191,22 @@ function computeAura(metrics) {
 }
 
 /**
- * Pin data to IPFS using Pinata
+ * Pin data to IPFS using Pinata API
  * @param {Object} data - Data to pin
+ * @returns {string} Complete Pinata gateway URL
  */
 async function pinToIPFS(data) {
-    const PINATA_API_KEY = process.env.PINATA_API_KEY;
-    const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
+    const PINATA_JWT = process.env.PINATA_JWT;
+    const PINATA_GATEWAY = process.env.PINATA_GATEWAY || 'https://indigo-naval-wolverine-789.mypinata.cloud';
 
-    if (!PINATA_API_KEY || !PINATA_SECRET_KEY) {
-        console.warn('⚠️  Pinata credentials not set, skipping IPFS upload');
-        return 'QmMockHash' + Date.now(); // Mock hash for testing
+    if (!PINATA_JWT) {
+        console.warn('⚠️  Pinata JWT not set, skipping IPFS upload');
+        const mockHash = 'QmMockHash' + Date.now();
+        return `${PINATA_GATEWAY}/ipfs/${mockHash}`;
     }
 
     try {
+        // Use Pinata API directly with JWT authentication
         const response = await axios.post(
             'https://api.pinata.cloud/pinning/pinJSONToIPFS',
             {
@@ -214,18 +217,28 @@ async function pinToIPFS(data) {
             },
             {
                 headers: {
-                    'pinata_api_key': PINATA_API_KEY,
-                    'pinata_secret_api_key': PINATA_SECRET_KEY
+                    'Authorization': `Bearer ${PINATA_JWT}`,
+                    'Content-Type': 'application/json'
                 }
             }
         );
 
-        console.log(`📌 Pinned to IPFS: ${response.data.IpfsHash}`);
-        return response.data.IpfsHash;
+        const ipfsHash = response.data.IpfsHash;
+        const gatewayUrl = `${PINATA_GATEWAY}/ipfs/${ipfsHash}`;
+
+        console.log(`📌 Pinned to IPFS: ${ipfsHash}`);
+        console.log(`🔗 Gateway URL: ${gatewayUrl}`);
+
+        return gatewayUrl;
 
     } catch (error) {
         console.error('❌ Error pinning to IPFS:', error.message);
-        return 'QmMockHash' + Date.now(); // Fallback
+        if (error.response) {
+            console.error('Response status:', error.response.status);
+            console.error('Response data:', error.response.data);
+        }
+        const mockHash = 'QmMockHash' + Date.now();
+        return `${PINATA_GATEWAY}/ipfs/${mockHash}`;
     }
 }
 
@@ -233,9 +246,9 @@ async function pinToIPFS(data) {
  * Update vault aura on-chain
  * @param {string} vaultAddress - Vault contract address
  * @param {number} aura - Computed aura score
- * @param {string} ipfsHash - IPFS hash of metrics
+ * @param {string} ipfsUrl - Complete IPFS gateway URL
  */
-async function updateVaultAura(vaultAddress, aura, ipfsHash) {
+async function updateVaultAura(vaultAddress, aura, ipfsUrl) {
     const RPC_URL = process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org';
     const PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 
@@ -271,7 +284,9 @@ async function updateVaultAura(vaultAddress, aura, ipfsHash) {
 
     // Send transaction
     console.log(`\n📤 Sending updateAura transaction...`);
-    const tx = await vaultContract.updateAura(aura, ipfsHash);
+    console.log(`📊 Aura: ${aura}`);
+    console.log(`🔗 IPFS URL: ${ipfsUrl}`);
+    const tx = await vaultContract.updateAura(aura, ipfsUrl);
     console.log(`Transaction hash: ${tx.hash}`);
 
     console.log('⏳ Waiting for confirmation...');
@@ -345,15 +360,15 @@ async function main() {
                 version: '1.0.0'
             }
         };
-        const ipfsHash = await pinToIPFS(metricsData);
+        const ipfsUrl = await pinToIPFS(metricsData);
 
         // Step 4: Update vault (unless dry run)
         if (dryRun) {
             console.log('\n🏁 Dry run complete. Would update vault with:');
             console.log(`  Aura: ${aura}`);
-            console.log(`  IPFS: ${ipfsHash}`);
+            console.log(`  IPFS URL: ${ipfsUrl}`);
         } else {
-            const receipt = await updateVaultAura(vaultAddress, aura, ipfsHash);
+            const receipt = await updateVaultAura(vaultAddress, aura, ipfsUrl);
             console.log('\n🎉 Oracle update complete!');
         }
 
@@ -384,8 +399,8 @@ Options:
 
 Environment Variables:
   NEYNAR_API_KEY       Neynar API key for Farcaster data
-  PINATA_API_KEY       Pinata API key for IPFS
-  PINATA_SECRET_KEY    Pinata secret key
+  PINATA_JWT           Pinata JWT token for IPFS
+  PINATA_GATEWAY       Pinata gateway URL (default: https://indigo-naval-wolverine-789.mypinata.cloud)
   ORACLE_PRIVATE_KEY   Private key for oracle wallet
   RPC_URL              RPC endpoint (default: Celo Alfajores)
 
