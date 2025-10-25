@@ -1,7 +1,3 @@
-Here is the corrected version of your README file. I've removed the garbled text at the very end.
-
------
-
 # AuraFi - Creator Vaults
 
 AuraFi is a dual-collateral protocol where creators and fans jointly back creator tokens on Celo. Creators stake CELO to unlock minting stages, while fans deposit CELO to mint tokens. A creator's Aura score (derived from Farcaster activity) dynamically adjusts token value (peg) and supply caps, with forced contraction and liquidation mechanisms ensuring aligned incentives.
