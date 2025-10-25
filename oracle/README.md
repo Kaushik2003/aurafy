@@ -126,10 +126,10 @@ node oracle.js --vault <vault-address> --fid <farcaster-id> [options]
 node oracle.js --vault 0x1234... --fid 1398844
 
 # Test with mock data
-node oracle.js --vault 0x1234... --fid 12345 --mock
+node oracle.js --vault 0x1234... --fid 1398844 --mock
 
 # Dry run (compute only, no transaction)
-node oracle.js --vault 0x1234... --fid 12345 --dry-run
+node oracle.js --vault 0x1234... --fid 1398844 --dry-run
 ```
 
 ### Fetch Aura Data (Read)

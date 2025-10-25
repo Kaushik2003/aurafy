@@ -24,7 +24,7 @@ node oracle.js --vault <vault-address> --fid <farcaster-id> [options]
 **Example:**
 ```bash
 # Push data to vault with mock metrics
-node oracle.js --vault 0x0000000000000000000000000000000000000001 --fid 12345 --mock
+node oracle.js --vault 0x0000000000000000000000000000000000000001 --fid 1398844 --mock
 ```
 
 ### 2. `test-oracle.js` - Read Data from Contract
@@ -56,7 +56,7 @@ node test-oracle.js 0x1234567890123456789012345678901234567890
 
 ### Step 1: Push Data (Write)
 ```bash
-node oracle.js --vault 0x0000000000000000000000000000000000000001 --fid 12345 --mock
+node oracle.js --vault 0x0000000000000000000000000000000000000001 --fid 1398844 --mock
 ```
 
 **Expected Output:**
