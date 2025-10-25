@@ -172,15 +172,26 @@ factory.setStageConfig(vault, 4, 18 ether, 3450 ether); // Stage 4: 18 CELO, 345
 # Accumulate 10-20 CELO over time for more realistic testing
 ```
 
-#### Option C: Local Fork Testing
+#### Option C: Local Fork Testing (Recommended!)
+
+Use Anvil to fork Celo testnet with unlimited funds:
 
 ```bash
-# Fork mainnet/testnet with funded accounts
-anvil --fork-url https://rpc.ankr.com/celo_sepolia
+# Terminal 1: Start Anvil forking Celo Alfajores
+anvil --fork-url https://ethereum-sepolia-rpc.publicnode.com --chain-id 11155111
 
-# Then use anvil's default funded accounts (10000 ETH each)
-forge script script/Demo.s.sol --rpc-url http://localhost:8545 --broadcast
+# Terminal 2: Deploy and test with unlimited funds (10000 CELO per account!)
+export RPC_URL="http://localhost:8545"
+export PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+forge script script/Demo.s.sol --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvv
 ```
+
+**📖 See [ANVIL-TESTING.md](./ANVIL-TESTING.md) for complete Anvil testing guide with:**
+- Time manipulation (fast-forward for grace periods)
+- State snapshots and revert
+- Account impersonation
+- Complete testing workflows
+- Troubleshooting tips
 
 #### Option D: Minimal Testing Flow
 
@@ -235,9 +246,14 @@ cast send $FACTORY_ADDRESS \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY
 
+cast send 0x197baBc40fC361e9c324e9e690c016A609ac09D4 "createVault(string,s
+tring,address,uint256)" "CreatorToken" "CRTR" 0x70997970C51812dc3A010C7d01b50e0d17dc79C8  1000000000000000000000 --rpc-url http://local
+host:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
+
 # Get vault and token addresses from logs
-VAULT_ADDRESS="0x..."
-TOKEN_ADDRESS="0x..."
+VAULT_ADDRESS="0xa18454d24a1ac93f82b4967105528c6c23e4b3ef"
+TOKEN_ADDRESS="0x197babc40fc361e9c324e9e690c016a609ac09d4"
 ```
 
 #### Step 3: Bootstrap Creator Stake

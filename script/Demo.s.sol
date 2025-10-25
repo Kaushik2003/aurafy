@@ -43,18 +43,23 @@ contract Demo is Script {
     uint256 public constant CRITICAL_AURA = 10; // Liquidation scenario (very low peg, cap = 250 tokens min)
 
     function run() public {
-        // Setup demo accounts
-        deployer = msg.sender;
-        creator = address(uint160(uint256(keccak256("creator"))));
-        fan1 = address(uint160(uint256(keccak256("fan1"))));
-        fan2 = address(uint160(uint256(keccak256("fan2"))));
-        liquidator = address(uint160(uint256(keccak256("liquidator"))));
+        // Setup demo accounts using Anvil's default accounts
+        // These accounts are pre-funded when using Anvil
+        deployer = msg.sender; // Account 0: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+        creator = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8; // Account 1
+        fan1 = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC; // Account 2
+        fan2 = 0x90F79bf6EB2c4f870365E785982E1f101E93b906; // Account 3
+        liquidator = 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65; // Account 4
 
-        // Fund demo accounts
-        vm.deal(creator, 200 ether);
-        vm.deal(fan1, 500 ether); // Needs ~355 CELO for 200 tokens
-        vm.deal(fan2, 500 ether); // Needs ~266 CELO for 150 tokens
-        vm.deal(liquidator, 50 ether);
+        // Note: When broadcasting, these accounts are already funded by Anvil
+        // When simulating locally, we need to fund them
+        if (block.chainid == 31337 || tx.origin == address(0)) {
+            // Local simulation mode
+            vm.deal(creator, 200 ether);
+            vm.deal(fan1, 500 ether);
+            vm.deal(fan2, 500 ether);
+            vm.deal(liquidator, 50 ether);
+        }
 
         console.log("\n");
         console.log("========================================");
@@ -147,7 +152,10 @@ contract Demo is Script {
         vm.stopBroadcast();
 
         // Creator bootstraps stake
-        vm.startBroadcast(creator);
+        // Use private key for Anvil account 1
+        vm.startBroadcast(
+            0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+        );
 
         vault.bootstrapCreatorStake{value: CREATOR_BOOTSTRAP}();
 
@@ -232,7 +240,10 @@ contract Demo is Script {
         console.log("Total payment:", totalPayment / 1 ether, "CELO");
         console.log("");
 
-        vm.startBroadcast(fan1);
+        // Use private key for Anvil account 2
+        vm.startBroadcast(
+            0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
+        );
         vault.mintTokens{value: totalPayment}(FAN1_MINT_AMOUNT);
         vm.stopBroadcast();
 
@@ -265,6 +276,10 @@ contract Demo is Script {
         console.log("");
 
         // Wait for cooldown (6 hours)
+        console.log("Fast-forwarding time by 6 hours...");
+        console.log(
+            "Note: When broadcasting to Anvil, use: cast rpc evm_increaseTime 21601"
+        );
         vm.warp(block.timestamp + 6 hours + 1);
 
         vm.startBroadcast(deployer);
@@ -311,7 +326,10 @@ contract Demo is Script {
         console.log("Total payment:", totalPayment / 1 ether, "CELO");
         console.log("");
 
-        vm.startBroadcast(fan2);
+        // Use private key for Anvil account 3
+        vm.startBroadcast(
+            0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
+        );
         vault.mintTokens{value: totalPayment}(FAN2_MINT_AMOUNT);
         vm.stopBroadcast();
 
@@ -495,7 +513,10 @@ contract Demo is Script {
             uint256 liquidatorBalBefore = liquidator.balance;
             uint256 creatorCollBefore = creatorColl;
 
-            vm.startBroadcast(liquidator);
+            // Use private key for Anvil account 4
+            vm.startBroadcast(
+                0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a
+            );
             vault.liquidate{value: liquidationPayment}();
             vm.stopBroadcast();
 
