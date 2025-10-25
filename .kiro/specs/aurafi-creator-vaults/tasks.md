@@ -216,6 +216,12 @@
 
 
 
+
+
+
+
+
+
   - Implement executeForcedBurn(uint256 maxOwnersToProcess) external function
   - Verify block.timestamp >= forcedBurnDeadline, revert with GracePeriodActive
   - Verify pendingForcedBurn > 0
@@ -517,7 +523,24 @@
   - Test peg clamping at P_MIN and P_MAX boundaries
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 8.4, 8.5_
 
-- [ ]* 27b. Write integration tests for oracle-vault interaction
+- [x] 27b. Write integration tests for oracle-vault interaction
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   - Test oracle updates AuraOracle, vault reads new value immediately
   - Test multiple vaults reading from same AuraOracle
   - Test vault operations (mint/redeem) use latest oracle aura
@@ -525,7 +548,14 @@
   - Test that vault never stores stale aura values
   - _Requirements: 5.1, 5.6, 8.4, 8.5_
 
-- [ ]* 28. Write comprehensive unit tests for forced contraction
+- [x] 28. Write comprehensive unit tests for forced contraction
+
+
+
+
+
+
+
   - Test executeForcedBurn reverts before deadline
   - Test executeForcedBurn succeeds after deadline
   - Test pro-rata token burning across positions
@@ -538,8 +568,12 @@
   - Test forced burn with single position
   - Test forced burn with multiple positions across multiple owners
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
+-
 
-- [ ]* 29. Write comprehensive unit tests for liquidation
+- [ ] 29. Write comprehensive unit tests for liquidation
+
+
+
   - Test liquidation succeeds when health < LIQ_CR
   - Test liquidation reverts when health >= LIQ_CR
   - Test liquidation reverts with payCELO below minimum
@@ -597,6 +631,11 @@
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
 - [x] 34. Create README documentation (PARTIAL - needs updates to match actual implementation)
+
+
+
+
+
   - Write project overview and AuraFi concept explanation ✓
   - Document contract architecture and interactions ✓
   - Provide setup instructions: install Foundry, install dependencies ✓
@@ -609,8 +648,17 @@
   - Document MVP limitations and future enhancements ❌ NEEDS UPDATE
   - Update README to reflect actual dual-collateral vault design (not ERC-4626) ❌ NEEDS UPDATE
   - _Requirements: All requirements - documentation_
+-
 
-- [ ] 34b. Update README to match implementation
+- [x] 34b. Update README to match implementation
+
+
+
+
+
+
+
+
   - Remove ERC-4626 references (vaults are not ERC-4626 compliant)
   - Update feature list to reflect dual-collateral model, staged progression, forced contraction, liquidation
   - Add architecture section explaining CreatorVault, VaultFactory, AuraOracle, Treasury, CreatorToken
@@ -619,76 +667,25 @@
   - Document security considerations and known limitations
   - _Requirements: All requirements - documentation_
 
-- [ ] 35. Create demo script for end-to-end demonstration
-  - Create script/Demo.s.sol Foundry script
+- [x] 35. Create demo script for end-to-end demonstration
+  - Create script/Demo.s.sol Foundry script with comprehensive workflow
   - Deploy all contracts (factory, treasury, oracle)
-  - Create test vault for demo creator
-  - Bootstrap creator stake to unlock stage 1
-  - Simulate fan mints at stage 1
-  - Call oracle to update aura upward (peg increases)
+  - Create test vault for demo creator (FID tracked off-chain)
+  - Bootstrap creator stake to unlock stage 1 (100 CELO)
+  - Push mock oracle updates for automated testing (initial aura ~136)
+  - Simulate fan mints at stage 1 with proper qty calculations
+  - Push increased aura (~175) to demonstrate peg increase
   - Simulate more fan mints at higher peg
-  - Call oracle to update aura downward (trigger forced burn)
-  - Wait grace period and execute forced burn
-  - Degrade health and perform liquidation
-  - Log all state changes and events
-  - Output summary of demo flow
+  - Push decreased aura (~40) to trigger forced burn
+  - Wait grace period (24 hours simulated) and execute forced burn
+  - Push critical aura (~20) to degrade health and trigger liquidation
+  - Perform liquidation with proper payment
+  - Log all state changes and events throughout
+  - Output comprehensive summary of demo flow
+  - Create DEMO.md with complete instructions for both mock and real testnet demos
+  - Document oracle integration requirements and edge cases
+  - Include troubleshooting guide with 10+ edge cases and production considerations
   - _Requirements: All requirements - demonstration_
+  - _Note: Demo uses mock oracle data for automated testing; DEMO.md documents real testnet integration with oracle.js_
 
 ---
-
-## Remaining Tasks to Complete MVP
-
-### Critical (Required for Core Functionality)
-
-- [ ] 11b. Complete forced burn implementation
-  - Add SupplyCapShrink event to CreatorVault events section
-  - Update checkAndTriggerForcedBurn() to emit SupplyCapShrink event when triggered
-  - _Requirements: 6.1, 8.5_
-
-- [ ] 12. Implement forced contraction execution with batched processing
-  - Implement executeForcedBurn(uint256 maxOwnersToProcess) external function
-  - Verify block.timestamp >= forcedBurnDeadline, revert with GracePeriodActive
-  - Verify pendingForcedBurn > 0
-  - Initialize totalBurned = 0 and totalWriteDown = 0
-  - Iterate through positionOwners array up to maxOwnersToProcess limit
-  - For each owner, iterate through their positions array
-  - Calculate burnFromPosition = (position.qty * pendingForcedBurn) / totalSupply using WAD math (floor)
-  - Calculate collateralWriteDown = (position.collateral * burnFromPosition) / position.qty
-  - Reduce position.qty by burnFromPosition and position.collateral by collateralWriteDown
-  - Call token.burn(owner, burnFromPosition)
-  - Accumulate totalBurned and totalWriteDown
-  - Update totalSupply and totalCollateral after processing
-  - Reduce pendingForcedBurn by totalBurned
-  - If pendingForcedBurn == 0, clear forcedBurnDeadline
-  - Emit ForcedBurnExecuted event with totalBurned and totalWriteDown
-  - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
-
-- [ ] 14b. Complete view functions
-  - Add getCurrentSupplyCap() external view function that fetches current aura and returns calculateSupplyCap(aura)
-  - Verify getPositionCount() function is complete (file was truncated)
-  - _Requirements: 8.3, 8.4, 8.5_
-
-- [ ] 14c. Add ICreatorToken interface to CreatorVault
-  - Add ICreatorToken interface definition with mint(), burn(), and transferFrom() function signatures
-  - Update all token interactions to use ICreatorToken interface casting
-  - _Requirements: 1.4, 9.3_
-
-### Important (Recommended for Production)
-
-- [ ] 34b. Update README to match implementation
-  - Remove ERC-4626 references (vaults are not ERC-4626 compliant)
-  - Update feature list to reflect dual-collateral model, staged progression, forced contraction, liquidation
-  - Add architecture section explaining CreatorVault, VaultFactory, AuraOracle, Treasury, CreatorToken
-  - Document key concepts: positions, stages, peg calculation, health ratio, forced burn, liquidation
-  - Add usage examples for creator and fan flows
-  - Document security considerations and known limitations
-  - _Requirements: All requirements - documentation_
-
-### Optional (Nice to Have)
-
-- [ ] 35. Create demo script for end-to-end demonstration
-  - Full implementation as described above
-  - _Requirements: All requirements - demonstration_
-
-### Optional Testing (Tasks 27-33)
-All testing tasks marked with `*` are optional and provide comprehensive test coverage beyond the basic tests already implemented. These can be completed if thorough testing is desired before production deployment.
